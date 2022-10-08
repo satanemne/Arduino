@@ -1,0 +1,151 @@
+#include <UniversalTelegramBot.h>
+#define WIFI_SSID "*********"
+#define WIFI_PASS "*********"
+#define BOT_TOKEN "5170846642:AAHdpAfp**************cyUpfPIS-7BBy54"
+#include <FastBot.h>
+#include "DHT.h"
+#include <ArduinoJson.h>
+#define DHTPIN D5                                       // пин датчика
+#define PIN_PHOTO_SENSOR A0                             //фотореле
+#define FILT F("Статус, Свет вкл. выкл, Температура,")  // Стоп слова
+
+//диоды
+const int redPin = D2;    // номер выхода, подключенного к светодиоду
+const int greenPin = D3;  // номер выхода, подключенного к светодиоду
+const int bluePin = D4;   // номер выхода, подключенного к светодиоду
+int redState = LOW;       // этой переменной устанавливаем состояние светодиода
+int greenState = LOW;     // этой переменной устанавливаем состояние светодиода
+int blueState = LOW;      // этой переменной устанавливаем состояние светодиода
+long previousMillis = 0;  // храним время последнего переключения светодиода
+//long redinterval = 1000;    // интервал между включение/выключением светодиода (3 секунда)
+long checkwifi = 10000;  // интервал между включение/выключением светодиода (3 секунда)
+//long blueinterval = 1000;   // интервал между включение/выключением светодиода (3 секунда)
+int light = LOW;
+int lamp_status = LOW;
+DHT dht(DHTPIN, DHT11);  //Инициация датчика
+FastBot bot(BOT_TOKEN);
+const int Pin_tone = D1;      // номер порта зумм ера
+const byte COUNT_NOTES = 39;  // Колличество нот
+//частоты ноты
+int frequences[COUNT_NOTES] = {
+  392, 392, 392, 311, 466, 392, 311, 466, 392,
+  587, 587, 587, 622, 466, 369, 311, 466, 392,
+  784, 392, 392, 784, 739, 698, 659, 622, 659,
+  415, 554, 523, 493, 466, 440, 466,
+  311, 369, 311, 466, 392
+};
+//длительность нот
+int durations[COUNT_NOTES] = {
+  350, 350, 350, 250, 100, 350, 250, 100, 700,
+  350, 350, 350, 250, 100, 350, 250, 100, 700,
+  350, 250, 100, 350, 250, 100, 100, 100, 450,
+  150, 350, 250, 100, 100, 100, 450,
+  150, 350, 250, 100, 750
+};
+// датчик температуры функция
+String getReadings() {
+  float temperature, humidity;
+  temperature = dht.readTemperature();
+  humidity = dht.readHumidity();
+  String message = "Температура: " + String(temperature-2) + " ºC \n";
+  message += "Влажность: " + String(humidity) + " % \n";
+  return message;
+}
+
+void setup() {
+  pinMode(D6, OUTPUT);
+  pinMode(redPin, OUTPUT);
+  pinMode(greenPin, OUTPUT);
+  pinMode(bluePin, INPUT);
+  unsigned long currentMillis = millis();
+  digitalWrite(bluePin, LOW);
+  noTone(D1);
+  connectWiFi();
+  bot.attach(newMsg);
+  bot.setChatID("962576906,1657421141");
+  pinMode(D2, OUTPUT);
+  dht.begin();
+  Serial.begin(9600);                              // подключаем монитор порта
+  pinMode(D8, INPUT);                              //button
+  pinMode(Pin_tone, OUTPUT);                       // Настраиваем контакт  buzzer на выход
+  bot.showMenu("Свет вкл. выкл \t Температура \n Статус света");
+  int lamp_status = LOW;  // вывод меню при запуске
+  if (analogRead(PIN_PHOTO_SENSOR) < 500) int lamp_status = HIGH;
+  else int lamp_status = LOW;
+}
+
+// обработчик сообщений
+void newMsg(FB_msg& msg) {
+  int val = analogRead(PIN_PHOTO_SENSOR);  //переменная для показаний фото датчика
+  String filt(FILT);
+  // FB_Parser - встроенный инструмент для парсинга разделённых запятой данных
+  FB_Parser p;
+  while (p.parse(filt)) {
+    // парсим все стоп-слова. Если в сообщении содержится сочетание - удаляем его
+    if (msg.text.indexOf(p.str) >= 0) bot.deleteMessage(msg.ID, msg.chatID);
+  }
+  if (msg.text == "/start")   bot.showMenu("Свет вкл. выкл \t Температура \n Статус света ");
+  if (msg.text == "Статус света" && lamp_status == HIGH) {
+    bot.sendMessage("Свет в коридоре ВКЛЮЧЕН",msg.chatID);
+  } 
+  else if (msg.text == "Статус света" && lamp_status == LOW) {
+    bot.sendMessage("Свет в коридоре ВЫКЛЮЧЕН",msg.chatID);
+  } 
+  else if (msg.text == "Свет вкл. выкл" && val < 500) {
+    digitalWrite(D6, HIGH);
+    bot.sendMessage("Свет в коридоре ВКЛЮЧЕН (и так все хорошо видно)", msg.chatID);
+    lamp_status = HIGH;
+  } 
+  else if (msg.text == "Свет вкл. выкл" && val > 500) {
+    digitalWrite(D6, LOW);
+    bot.sendMessage("Свет в коридоре ВЫКЛЮЧЕН", msg.chatID);
+    lamp_status = LOW;
+  } 
+  else if (msg.text == "Температура") {
+      String readings = getReadings();
+      bot.sendMessage(readings, msg.chatID);
+    }
+}
+
+void loop() {
+  unsigned long currentMillis = millis();
+  Serial.print(analogRead(PIN_PHOTO_SENSOR));
+  if (digitalRead(D8) == HIGH) {
+    bot.sendMessage("Кто-то приперся");
+    for (int i = 0; i <= COUNT_NOTES; i++) {            // Цикл от 0 до количества нот
+      tone(Pin_tone, frequences[i], durations[i] * 2);  // Включаем звук, определенной частоты
+      delay(durations[i] * 2);                          // Дауза для заданой ноты
+      noTone(Pin_tone);                                 // Останавливаем звук
+    }
+  }
+
+  if (currentMillis - previousMillis > checkwifi) {
+    // сохраняем время последнего переключения
+    previousMillis = currentMillis;
+    if (WiFi.status() == WL_CONNECTED)
+      greenState = HIGH;
+    else
+      greenState = LOW;
+    // устанавливаем состояния выхода, чтобы включить или выключить светодиод
+    digitalWrite(greenPin, greenState);
+    delay(1);
+    digitalWrite(greenPin, LOW);
+  }
+
+
+  bot.tick();
+}
+
+void connectWiFi() {
+  delay(2000);
+
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  while (WiFi.status() != WL_CONNECTED) {
+    redState = HIGH;
+    digitalWrite(redPin, redState);
+    delay(100);
+    if (millis() > 20000) ESP.restart();
+  }
+  redState = LOW;
+  digitalWrite(redPin, redState);
+}
