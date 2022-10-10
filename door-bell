@@ -62,7 +62,7 @@ void setup() {
   noTone(D1);
   connectWiFi();
   bot.attach(newMsg);
-  bot.setChatID("962576906,1657421141");
+  bot.setChatID("962506,1657441");
   pinMode(D2, OUTPUT);
   dht.begin();
   Serial.begin(9600);                              // подключаем монитор порта
